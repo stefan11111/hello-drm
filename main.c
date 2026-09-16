@@ -46,7 +46,7 @@ static void sigint_handler(int arg)
 
 int main()
 {
-    struct gbm_bo *bo = modesetting_open("/dev/dri/card0");
+    struct gbm_bo *bo = modesetting_open("/dev/dri/card1");
     for(int i = 0; i < 31 && !bo; i++) {
         char device[] = "/dev/cardxx";
         snprintf(device, sizeof(device), "/dev/card%d", i);

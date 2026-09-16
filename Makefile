@@ -8,9 +8,11 @@ MODESETTING_OBJ = \
 
 GBM_SCANOUT_OBJ = gbm-scanout.o
 
-ALL_OBJ = ${MODESETTING_OBJ} ${GBM_SCANOUT_OBJ}
+GBM_SCANOUT2_OBJ = gbm-scanout2.o
 
-all: modesetting gbm-scanout
+ALL_OBJ = ${MODESETTING_OBJ} ${GBM_SCANOUT_OBJ} ${GBM_SCANOUT2_OBJ}
+
+all: modesetting gbm-scanout gbm-scanout2
 
 .c.o:
 	${CC} ${XCFLAGS} -c -o $@ $<
@@ -21,5 +23,8 @@ modesetting: ${MODESETTING_OBJ}
 gbm-scanout: ${GBM_SCANOUT_OBJ}
 	${CC} ${XCFLAGS} -o $@ ${GBM_SCANOUT_OBJ} ${XLDFLAGS}
 
+gbm-scanout2: ${GBM_SCANOUT2_OBJ}
+	${CC} ${XCFLAGS} -o $@ ${GBM_SCANOUT2_OBJ} ${XLDFLAGS}
+
 clean:
-	rm -f modesetting gbm-scanout ${ALL_OBJ}
+	rm -f modesetting gbm-scanout gbm-scanout2 ${ALL_OBJ}

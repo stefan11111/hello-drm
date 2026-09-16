@@ -44,35 +44,6 @@ modesetting_find_connector(drmModeRes *res, int fd, uint32_t *conn_id)
     return NULL;
 }
 
-static void
-draw_frame(uint32_t *ptr, uint32_t width, uint32_t height, uint32_t pitch)
-{
-    static int flip = 0;
-
-    uint32_t blue, red;
-
-    if (!flip) {
-        blue = 0xff;
-        red = 0xff << 16;
-    } else {
-        blue = 0xff << 16;
-        red = 0xff;
-    }
-
-    flip = !flip;
-
-    for (int i = 0; i < height / 2; i++) {
-        for (int j = 0; j < width; j++) {
-            ptr[i * pitch + j] = blue;
-        }
-    }
-
-    for (int i = height / 2; i < height; i++) {
-        for (int j = 0; j < width; j++) {
-            ptr[i * pitch + j] = red;
-        }
-    }
-}
 
 volatile int done = 0;
 
@@ -103,8 +74,8 @@ int main()
 
     drmModeConnector *connector = modesetting_find_connector(resources, fd, &conn_id);
 
-    struct gbm_bo *primary = gbm_bo_create_with_modifiers2(gbm, width, height, GBM_FORMAT_XRGB8888, (uint64_t[]){0}, 1,
-                                           /* GBM_BO_USE_SCANOUT | */ GBM_BO_USE_RENDERING | GBM_BO_USE_FRONT_RENDERING);
+    struct gbm_bo *primary = gbm_bo_create(gbm, width, height, GBM_FORMAT_XRGB8888,
+                                           GBM_BO_USE_SCANOUT | GBM_BO_USE_WRITE | GBM_BO_USE_LINEAR);
 
     printf("bo: %p\n", primary);
 
@@ -122,28 +93,40 @@ int main()
 
     drmModeSetCrtc(fd, crtc_id, fb_id, 0, 0, &conn_id, 1, &connector->modes[0]);
 
-printf("crtc_id :%d, fb_id: %d, conn_id: %d\n", crtc_id, fb_id, conn_id);
-
     printf("set_crtc\n");
 
     uint32_t blue = 0xff;
     uint32_t red = 0xff0000;
-    uint32_t pitch = /* gbm_bo_get_stride(bo) */ stride / sizeof(uint32_t);
-
-    printf("modifier: 0x%lx\n", (long)gbm_bo_get_modifier(bo));
+    uint32_t pitch = gbm_bo_get_stride(bo) / sizeof(uint32_t);
 
     signal(SIGINT, sigint_handler);
 
-    drmModeClip full_clip = (drmModeClip){.x1 = 0, .y1 = 0, .x2 = width, .y2 = height,};
+while(!done) {
+int tmp;
+    for (int i = 0; i < height / 2; i++) {
+        for (int j = 0; j < width; j++) {
+            ptr[i * pitch + j] = blue;
+        }
+    }
 
-    while(!done) {
-unused = NULL;
-ptr = gbm_bo_map(bo, 0, 0, width, height, GBM_BO_TRANSFER_READ_WRITE, &stride, &unused);
-        draw_frame(ptr, width, height, pitch);
-        drmModeDirtyFB(fd, fb_id, &full_clip, 1);
-gbm_bo_unmap(primary, unused);
+    for (int i = height / 2; i < height; i++) {
+        for (int j = 0; j < width; j++) {
+            ptr[i * pitch + j] = red;
+        }
+    }
+
+//    signal(SIGINT, sigint_handler);
+
+//    while (!done) {
         sleep(1);
-        printf("flip\n");
+
+tmp = blue;
+blue = red;
+red = tmp;
+printf("flip\n");
+//drmDropMaster(fd);
+//drmSetMaster(fd);
+drmModeSetCrtc(fd, crtc_id, fb_id, 0, 0, &conn_id, 1, &connector->modes[0]);
     }
     return 0;
 }

@@ -122,8 +122,6 @@ int main()
 
     drmModeSetCrtc(fd, crtc_id, fb_id, 0, 0, &conn_id, 1, &connector->modes[0]);
 
-printf("crtc_id :%d, fb_id: %d, conn_id: %d\n", crtc_id, fb_id, conn_id);
-
     printf("set_crtc\n");
 
     uint32_t blue = 0xff;
