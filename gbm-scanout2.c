@@ -126,13 +126,13 @@ gbm_bo_create_and_map_once(struct gbm_device *gbm,
 static struct gbm_bo*
 gbm_bo_create_and_map(struct gbm_device *gbm, gbm_user_data_t *data, uint32_t format)
 {
-    uint32_t width = data->mode->hdisplay;
-    uint32_t height = data->mode->vdisplay;
+    uint32_t width = data->mode ? data->mode->hdisplay : 1920;
+    uint32_t height = data->mode ? data->mode->vdisplay : 1080;
 
-#if 0
-    uint32_t flags = GBM_BO_USE_SCANOUT | GBM_BO_USE_RENDERING | GBM_BO_USE_FRONT_RENDERING;
-    uint32_t flags2 = GBM_BO_USE_SCANOUT | GBM_BO_USE_RENDERING;
-#endif
+
+    uint32_t flags = GBM_BO_USE_SCANOUT | GBM_BO_USE_FRONT_RENDERING;
+    uint32_t flags2 = GBM_BO_USE_SCANOUT;
+
     uint32_t flags_dumb = GBM_BO_USE_SCANOUT | GBM_BO_USE_WRITE;
 
     struct gbm_bo *bo = NULL;
@@ -146,6 +146,16 @@ gbm_bo_create_and_map(struct gbm_device *gbm, gbm_user_data_t *data, uint32_t fo
     if (!bo) {
         bo = gbm_bo_create_and_map_once(gbm, data, width, height, format, flags_dumb);
     }
+
+#if 0
+    if (!bo) {
+        bo = gbm_bo_create(gbm, width, height, format, flags);
+    }
+
+    if (!bo) {
+        bo = gbm_bo_create(gbm, width, height, format, flags2);
+    }
+#endif
 
     return bo;
 }
@@ -172,6 +182,8 @@ gbm_format_get_depth(uint32_t format)
     case GBM_FORMAT_XRGB2101010:
     case GBM_FORMAT_XBGR2101010:
         return 30;
+    case GBM_FORMAT_XBGR16161616F:
+        return 48;
     }
 }
 
@@ -197,57 +209,47 @@ printf("depth: %d, bpp: %d\n", depth, bpp);
     return ret ? 0 : fb_id;
 }
 
+static int
+modesetting_grade_mode(drmModeModeInfo *mode, uint32_t req_w, uint32_t req_h, uint32_t req_rate)
+{
+    int score = 1;
+
+    if (req_w && (req_w == mode->hdisplay)) {
+        score += 10;
+    }
+
+    if (req_h && (req_h == mode->vdisplay)) {
+        score += 10;
+    }
+
+    if (req_rate && (req_rate == mode->vrefresh)) {
+        score += 5;
+    }
+
+    if (mode->type & DRM_MODE_TYPE_PREFERRED) {
+        score++;
+    }
+
+    return score;
+}
+
 static drmModeModeInfo*
 modesetting_find_mode(drmModeConnector *conn, uint32_t req_w, uint32_t req_h, uint32_t req_rate)
 {
     drmModeModeInfo *best_mode = NULL;
-    int found_rate = FALSE;
+    int best_score = 0;
 
-    if (req_w && req_h) {
-        for (int i = 0; i < conn->count_modes; i++) {
-            drmModeModeInfo *mode = &conn->modes[i];
-
-            if ((req_w != mode->hdisplay) ||
-                (req_h != mode->vdisplay)) {
-                continue;
-            }
-
-            if (!best_mode) {
-                best_mode = mode;
-            }
-
-            if (req_rate && req_rate != mode->vrefresh) {
-                continue;
-            }
-
-            if (!found_rate) {
-                found_rate = TRUE;
-                best_mode = mode;
-            }
-
-            if (mode->type & DRM_MODE_TYPE_PREFERRED) {
-                best_mode = mode;
-                break;
-            }
-        }
-    }
-
-    if (best_mode) {
-        return best_mode;
-    }
-
-    /* Find something */
     for (int i = 0; i < conn->count_modes; i++) {
         drmModeModeInfo *mode = &conn->modes[i];
+        int score;
 
-        if (!best_mode) {
-            best_mode = mode;
+        score = modesetting_grade_mode(mode, req_w, req_h, req_rate);
+        if (score <= best_score) {
+            continue;
         }
 
-        if (mode->type & DRM_MODE_TYPE_PREFERRED) {
-            best_mode = mode;
-            break;
-        }
+        best_mode = mode;
+        best_score = score;
     }
 
     return best_mode;
@@ -256,19 +258,24 @@ modesetting_find_mode(drmModeConnector *conn, uint32_t req_w, uint32_t req_h, ui
 static int
 modesetting_grade_connector(drmModeConnector *conn)
 {
-    if (!conn->modes || !conn->count_modes) {
-        return 0;
+    int score = 1;
+
+    if (conn->modes && conn->count_modes) {
+        score += 5;
     }
 
     switch(conn->connection) {
     case DRM_MODE_CONNECTED:
-        return 2;
+        score++;
     case DRM_MODE_UNKNOWNCONNECTION:
-        return 1;
+        score++;
+    case DRM_MODE_DISCONNECTED:
+        score++;
     }
 
-    return 0;
+    return score;
 }
+
 
 static drmModeConnector*
 modesetting_find_connector(drmModeRes *res, int fd, uint32_t *conn_id)
@@ -365,9 +372,6 @@ modesetting_open(struct gbm_device *gbm, int w, int h, int r, uint32_t format)
     }
 
     data->mode = modesetting_find_mode(data->connector, w, h, r);
-    if (!data->mode) {
-        goto fail;
-    }
 
     ret = gbm_bo_create_and_map(gbm, data, format);
     if (!ret) {
@@ -416,7 +420,7 @@ modesetting_enable(struct gbm_bo *bo)
         drmSetMaster(fd);
     }
 
-    return no_modeset || !drmModeSetCrtc(fd, data->crtc_id, data->fb_id, 0, 0, &data->conn_id, 1, data->mode);
+    return no_modeset || !drmModeSetCrtc(fd, data->crtc_id, data->fb_id, 0, 0, &data->conn_id, !!data->mode, data->mode);
 }
 
 static void

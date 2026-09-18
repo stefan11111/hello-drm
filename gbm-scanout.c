@@ -81,7 +81,7 @@ static void sigint_handler(int arg)
 	done = 1;
 }
 
-int main()
+int main(int ac)
 {
     int fd = open("/dev/dri/card0", O_RDWR);
 
@@ -103,10 +103,12 @@ int main()
 
     drmModeConnector *connector = modesetting_find_connector(resources, fd, &conn_id);
 
-    struct gbm_bo *primary = gbm_bo_create_with_modifiers2(gbm, width, height, GBM_FORMAT_XRGB8888, (uint64_t[]){0}, 1,
-                                           /* GBM_BO_USE_SCANOUT | */ GBM_BO_USE_RENDERING | GBM_BO_USE_FRONT_RENDERING);
+    struct gbm_bo *primary = gbm_bo_create_with_modifiers2(gbm, width, height,
+                                                           ac >= 2 ? GBM_FORMAT_XBGR8888 : GBM_FORMAT_XRGB8888,
+                                                           (uint64_t[]){0}, 1,
+                                                           GBM_BO_USE_SCANOUT | GBM_BO_USE_FRONT_RENDERING);
 
-    printf("bo: %p\n", primary);
+    printf("bo: %p, format: 0x%x\n", primary, gbm_bo_get_format(primary));
 
     void* bo = primary;
 
